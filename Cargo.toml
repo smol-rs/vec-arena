@@ -1,0 +1,18 @@
+[package]
+name = "vec-arena"
+version = "0.0.1"
+authors = ["Stjepan Glavina <stjepang@gmail.com>"]
+repository = "https://github.com/stjepang/vec-arena.git"
+homepage = "https://github.com/stjepang/vec-arena"
+license = "MIT"
+readme = "README.md"
+# documentation = "TODO: url to docs on github"
+description = "Fast general-purpose arena"
+
+[lib]
+name = "vec_arena"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bench_splay"
+path = "benches/splay.rs"

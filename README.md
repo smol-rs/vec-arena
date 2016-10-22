@@ -1,1 +1,3 @@
-# vec-arena
+# VecArena
+
+Work in progress

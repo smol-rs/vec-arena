@@ -4,11 +4,24 @@ use std::mem;
 use std::ops::{Index, IndexMut};
 use std::ptr;
 
-mod bitmap;
+pub mod bitmap;
 
-// TODO: Handle ZST differently
-// TODO: Test ZST, make a ZST implementing Drop
 // TODO: check for overflow
+
+// TODO: fn with_capacity
+// TODO: fn reserve
+// TODO: fn reserve_exact
+// TODO: fn drain
+// TODO: fn iter
+// TODO: fn iter_mut
+// TODO: fn into_iter
+// TODO: fn clear
+// TODO: fn count
+// TODO: fn capacity
+// TODO: fn is_empty
+// TODO: fn as_mut2
+// TODO: fn get_unchecked
+// TODO: fn get_unchecked_mut
 
 pub struct VecArena<T> {
     elems: *const T,
@@ -36,11 +49,15 @@ impl<T> VecArena<T> {
         let count = self.bitmap.count();
 
         if count == len {
-            let new_len = if len == 0 { 4 } else { 2 * len };
+            let new_len = if len == 0 {
+                4
+            } else {
+                2 * len
+            };
             self.resize(new_len);
         }
 
-        let index = self.bitmap.allocate();
+        let index = self.bitmap.acquire();
         unsafe {
             ptr::write(self.elems.offset(index as isize) as *mut T, value);
         }
@@ -50,7 +67,7 @@ impl<T> VecArena<T> {
     pub fn remove(&mut self, index: usize) -> T {
         self.validate_index(index);
         unsafe {
-            self.bitmap.free(index);
+            self.bitmap.release(index);
             ptr::read(self.elems.offset(index as isize) as *mut T)
         }
     }
@@ -76,7 +93,7 @@ impl<T> VecArena<T> {
     #[inline]
     fn validate_index(&self, index: usize) {
         unsafe {
-            if index >= self.bitmap.len() || !self.bitmap.is_allocated(index) {
+            if index >= self.bitmap.len() || !self.bitmap.is_occupied(index) {
                 self.panic_invalid_index(index);
             }
         }

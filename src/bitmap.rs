@@ -1,77 +1,133 @@
+//! Metadata used by `VecArena`.
+//!
+//! It keeps track of occupied and vacant slots in the arena. Useful methods are provided for e.g.
+//! iterating over all occupied slots, or reserving additional slots.
+
 use std::mem;
 use std::ptr;
 
+/// Returns the number of bits in one integer of type `usize`.
 #[inline(always)]
 fn bits() -> usize {
     mem::size_of::<usize>() * 8
 }
 
+/// Returns the number of integers required to store `len` bits.
+#[inline(always)]
+fn blocks_for(len: usize) -> usize {
+    // Divide `len` by `bits()` and round up.
+    (len + bits() - 1) / bits()
+}
+
+/// Metadata for keeping track of occupied and vacant slots in `VecArena`.
+///
+/// It's implemented as an array of blocks, where every block keeps information for a small
+/// contiguous chunk of `log2(usize::MAX + 1)` slots. That's the number of bits in one `usize`.
+///
+/// A block consists of:
+///
+/// * a bit mask, in which zeros are for vacant slots and ones for occupied slots
+/// * index of the next block in the linked list
+/// * index of the previous block in the linked list
+///
+/// All blocks which are not fully occupied, except the last one, are linked together to form a
+/// doubly-linked list. This list allows finding a vacant slot to acquire in `O(1)` and releasing
+/// an occupied slot in `O(1)`, assuming the bitmap doesn't grow to accommodate more slots.
+///
+/// The last block is tricky to handle because it might not have the same number of slots as other
+/// blocks, so it gets special treatment in the implementation.
 pub struct Bitmap {
+    /// Storage for the following sequences, in this order:
+    ///
+    /// * bit masks
+    /// * indices to next node
+    /// * indices to previous node
+    ///
+    /// All three sequences are stored in this single contiguous array.
+    ///
+    /// The most common and costly operation during the lifetime of a bitmap is testing
+    /// whether a slot is occupied. Storing bit masks close together improves cache
+    /// performance.
     data: *mut usize,
-    blocks: usize,
+
+    /// Number of reserved slots.
     len: usize,
+
+    /// Number of occupied slots.
     count: usize,
+
+    /// Index of the first block in the linked list, or `!0` if the list is empty.
     head: usize,
 }
 
 impl Bitmap {
+    /// Constructs a new `Bitmap` with zero slots.
     pub fn new() -> Self {
         let data = {
-            let mut v = Vec::with_capacity(0);
-            let ptr = v.as_mut_ptr();
-            mem::forget(v);
+            let mut vec = Vec::with_capacity(0);
+            let ptr = vec.as_mut_ptr();
+            mem::forget(vec);
             ptr
         };
         Bitmap {
             data: data,
-            blocks: 0,
             len: 0,
             count: 0,
             head: !0,
         }
     }
 
-    #[inline(always)]
+    /// Returns the number of reserved slots in the bitmap.
+    #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    #[inline(always)]
+    /// Returns the number of occupied slots in the bitmap.
+    #[inline]
     pub fn count(&self) -> usize {
         self.count
     }
 
-    pub fn allocate(&mut self) -> usize {
-        assert!(self.blocks > 0);
+    /// Finds a vacant slot, marks as occupied, and returns its index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if all slots are occupied.
+    pub fn acquire(&mut self) -> usize {
+        assert!(self.count < self.len, "no vacant slots to acquire, len = {}", self.len);
 
-        let b = if self.head == !0 {
-            self.blocks - 1
+        let num_blocks = blocks_for(self.len);
+
+        let block = if self.head == !0 {
+            // The list is empty, so try the last block.
+            num_blocks - 1
         } else {
+            // The list has a head. Take a vacant slot from the head block.
             self.head
         };
 
         unsafe {
-            let i = {
-                let mask = *self.mask(b);
-                if self.head == !0 {
-                    assert!(mask != !0);
-                }
-                (!mask).trailing_zeros() as usize
-            };
-            debug_assert!(i < bits());
+            // Find the rightmost zero bit in the mask. Taking the rightmost zero is always ok,
+            // even if this is the last block.
+            let offset = (!*self.mask(block)).trailing_zeros() as usize;
+            debug_assert!(offset < bits());
 
-            let index = b * bits() + i;
+            // Use the block index and offset within it to calculate the actual slot index.
+            let index = block * bits() + offset;
             debug_assert!(index < self.len);
 
-            debug_assert!(*self.mask(b) >> i & 1 == 0);
-            *self.mask(b) |= 1 << i;
+            // Mark the slot as occupied in the block's bit mask.
+            debug_assert!(*self.mask(block) >> offset & 1 == 0);
+            *self.mask(block) ^= 1 << offset;
 
-            if *self.mask(b) == !0 && self.head == b {
-                let b = *self.next(b);
-                if b != !0 {
-                    *self.prev(b) = !0;
+            if block == self.head {
+                // If the block has just become fully occupied, remove it from the list.
+                if *self.mask(block) == !0 {
+                    let next = *self.next(block);
+                    self.link_blocks(!0, next);
+                    self.head = next;
                 }
-                self.head = b;
             }
 
             self.count += 1;
@@ -79,66 +135,73 @@ impl Bitmap {
         }
     }
 
-    unsafe fn connect(&mut self, a: usize, b: usize) {
-        if a != !0 { *self.next(a) = b; }
-        if b != !0 { *self.prev(b) = a; }
-    }
+    /// Releases the occupied slot at `index`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `index` is out of bounds, or if the slot is vacant.
+    pub fn release(&mut self, index: usize) {
+        assert!(index < self.len);
 
-    pub unsafe fn free(&mut self, index: usize) {
-        let b = index / bits();
-        let i = index % bits();
+        let block = index / bits();
+        let offset = index % bits();
 
-        *self.mask(b) ^= 1 << i;
-        self.count -= 1;
+        unsafe {
+            self.count -= 1;
 
-        if *self.mask(b) == 0 {
-            let head = self.head;
-            self.head = b;
+            // If the block is fully occupied, insert it into the list because now it won't be.
+            if *self.mask(block) == !0 {
+                let head = self.head;
+                self.link_blocks(!0, block);
+                self.link_blocks(block, head);
+                self.head = block;
+            }
 
-            self.connect(!0, b);
-            self.connect(b, head);
+            // Mark the slot as vacant in the block's bit mask.
+            assert!(*self.mask(block) >> offset & 1 == 1);
+            *self.mask(block) ^= 1 << offset;
         }
     }
 
-    pub fn resize(&mut self, len: usize) {
+    pub fn resize(&mut self, new_len: usize) {
         unsafe {
-            assert!(self.len <= len);
-            self.len = len;
+            let old_blocks = blocks_for(self.len);
 
-            let new_blocks = (len + bits() - 1) / bits();
-            assert!(self.blocks <= new_blocks);
+            assert!(self.len <= new_len);
+            self.len = new_len;
 
-            let diff = new_blocks - self.blocks;
+            let new_blocks = blocks_for(new_len);
+            assert!(old_blocks <= new_blocks);
+
+            let diff = new_blocks - old_blocks;
             if diff == 0 {
                 return;
             }
 
-            if self.blocks > 0 && *self.mask(self.blocks - 1) != !0 {
-                *self.next(self.blocks - 1) = self.head;
-                *self.prev(self.blocks - 1) = !0;
-                self.head = self.blocks - 1;
+            if old_blocks > 0 && *self.mask(old_blocks - 1) != !0 {
+                *self.next(old_blocks - 1) = self.head;
+                *self.prev(old_blocks - 1) = !0;
+                self.head = old_blocks - 1;
             }
 
             let new_data = {
-                let mut v = Vec::with_capacity(3 * new_blocks);
-                let ptr = v.as_mut_ptr();
-                mem::forget(v);
+                let mut vec = Vec::with_capacity(3 * new_blocks);
+                let ptr = vec.as_mut_ptr();
+                mem::forget(vec);
                 ptr
             };
 
             for i in 0..3 {
                 ptr::copy_nonoverlapping(
-                    self.data.offset((self.blocks * i) as isize),
+                    self.data.offset((old_blocks * i) as isize),
                     new_data.offset((new_blocks * i) as isize),
-                    self.blocks);
+                    old_blocks);
             }
-            Vec::from_raw_parts(self.data, 0, 3 * self.blocks);
+            Vec::from_raw_parts(self.data, 0, 3 * old_blocks);
 
-            ptr::write_bytes(new_data.offset(self.blocks as isize), 0, new_blocks - self.blocks);
+            ptr::write_bytes(new_data.offset(old_blocks as isize), 0, new_blocks - old_blocks);
 
-            let old_blocks = self.blocks;
             self.data = new_data;
-            self.blocks = new_blocks;
 
             if diff >= 2 {
                 for b in old_blocks .. new_blocks - 2 {
@@ -160,7 +223,7 @@ impl Bitmap {
     }
 
     #[inline]
-    pub unsafe fn is_allocated(&self, index: usize) -> bool {
+    pub unsafe fn is_occupied(&self, index: usize) -> bool {
         let b = index / bits();
         let i = index % bits();
         unsafe {
@@ -176,6 +239,12 @@ impl Bitmap {
         }
     }
 
+    #[inline]
+    unsafe fn link_blocks(&mut self, a: usize, b: usize) {
+        if a != !0 { *self.next(a) = b; }
+        if b != !0 { *self.prev(b) = a; }
+    }
+
     #[inline(always)]
     unsafe fn mask(&self, b: usize) -> *mut usize {
         self.data.offset(b as isize)
@@ -183,24 +252,29 @@ impl Bitmap {
 
     #[inline(always)]
     unsafe fn next(&self, b: usize) -> *mut usize {
-        self.data.offset((self.blocks + b) as isize)
+        self.data.offset((blocks_for(self.len) + b) as isize)
     }
 
     #[inline(always)]
     unsafe fn prev(&self, b: usize) -> *mut usize {
-        self.data.offset((2 * self.blocks + b) as isize)
+        self.data.offset((2 * blocks_for(self.len) + b) as isize)
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn check_invariants(&self) {
+        // TODO
     }
 }
 
 impl Drop for Bitmap {
     fn drop(&mut self) {
         unsafe {
-            Vec::from_raw_parts(self.data, 0, 2 * self.blocks);
+            Vec::from_raw_parts(self.data, 0, 2 * blocks_for(self.len));
         }
     }
 }
 
-struct Iter<'a> {
+pub struct Iter<'a> {
     bitmap: &'a Bitmap,
     b: usize,
     i: usize,
@@ -210,7 +284,7 @@ impl<'a> Iterator for Iter<'a> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.b < self.bitmap.blocks {
+        while self.b < blocks_for(self.bitmap.len) {
             let mask = unsafe { *self.bitmap.mask(self.b) };
 
             if self.i == bits() || mask == 0 {

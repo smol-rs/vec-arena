@@ -32,26 +32,25 @@ impl<T> Splay<T> where T: Ord + Eq + Clone {
     }
 
     fn rotate(&mut self, a: usize, b: usize) {
-        let x = &mut self.arena;
-        let p = x[a].parent;
+        let p = self.arena[a].parent;
 
-        let dir = if x[a].children[0] == b { 0 } else { 1 };
-        let t = x[b].children[dir ^ 1];
+        let dir = if self.arena[a].children[0] == b { 0 } else { 1 };
+        let t = self.arena[b].children[dir ^ 1];
 
-        x[a].children[dir] = t;
+        self.arena[a].children[dir] = t;
         if t != !0 {
-            x[t].parent = a;
+            self.arena[t].parent = a;
         }
-        x[b].children[dir ^ 1] = a;
-        x[a].parent = b;
+        self.arena[b].children[dir ^ 1] = a;
+        self.arena[a].parent = b;
 
         if p == !0 {
             self.root = b;
-            x[b].parent = !0;
+            self.arena[b].parent = !0;
         } else {
-            let dir = if x[p].children[0] == a { 0 } else { 1 };
-            x[p].children[dir] = b;
-            x[b].parent = p;
+            let dir = if self.arena[p].children[0] == a { 0 } else { 1 };
+            self.arena[p].children[dir] = b;
+            self.arena[b].parent = p;
         }
     }
 
@@ -82,7 +81,7 @@ impl<T> Splay<T> where T: Ord + Eq + Clone {
     }
 
     fn insert(&mut self, value: T) {
-        let node = self.arena.push(Node::new(value));
+        let node = self.arena.insert(Node::new(value));
 
         if self.root == !0 {
             self.root = node;

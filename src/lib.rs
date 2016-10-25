@@ -4,24 +4,16 @@ use std::mem;
 use std::ops::{Index, IndexMut};
 use std::ptr;
 
-pub mod bitmap;
+mod bitmap;
 
 // TODO: check for overflow
+// TODO: clone
 
-// TODO: fn with_capacity
-// TODO: fn reserve
-// TODO: fn reserve_exact
 // TODO: fn drain
 // TODO: fn iter
 // TODO: fn iter_mut
 // TODO: fn into_iter
 // TODO: fn clear
-// TODO: fn count
-// TODO: fn capacity
-// TODO: fn is_empty
-// TODO: fn as_mut2
-// TODO: fn get_unchecked
-// TODO: fn get_unchecked_mut
 
 pub struct VecArena<T> {
     elems: *const T,
@@ -44,17 +36,23 @@ impl<T> VecArena<T> {
         }
     }
 
-    pub fn insert(&mut self, value: T) -> usize {
-        let len = self.bitmap.len();
-        let count = self.bitmap.count();
+    pub fn with_capacity(cap: usize) -> Self {
+        let mut arena = Self::new();
+        arena.reserve_exact(cap);
+        arena
+    }
 
-        if count == len {
-            let new_len = if len == 0 {
-                4
-            } else {
-                2 * len
-            };
-            self.resize(new_len);
+    pub fn capacity(&self) -> usize {
+        self.bitmap.len()
+    }
+
+    pub fn occupied(&self) -> usize {
+        self.bitmap.occupied()
+    }
+
+    pub fn insert(&mut self, value: T) -> usize {
+        if self.bitmap.occupied() == self.bitmap.len() {
+            self.double();
         }
 
         let index = self.bitmap.acquire();
@@ -72,49 +70,81 @@ impl<T> VecArena<T> {
         }
     }
 
-    #[cold]
-    fn resize(&mut self, new_len: usize) {
-        let new_elems = unsafe {
+    pub fn reserve(&mut self, additional: usize) {
+        let len = self.bitmap.len();
+        self.bitmap.reserve(additional);
+        self.reallocate(len);
+    }
+
+    pub fn reserve_exact(&mut self, additional: usize) {
+        let len = self.bitmap.len();
+        self.bitmap.reserve_exact(additional);
+        self.reallocate(len);
+    }
+
+    fn reallocate(&mut self, old_len: usize) {
+        let new_len = self.bitmap.len();
+
+        unsafe {
+            // Allocate a new array.
             let mut vec = Vec::with_capacity(new_len);
             let ptr = vec.as_mut_ptr();
             mem::forget(vec);
 
-            let len = self.bitmap.len();
-            ptr::copy_nonoverlapping(self.elems, ptr, len);
-            Vec::from_raw_parts(self.elems as *mut T, 0, len);
+            // Copy data into the new array.
+            ptr::copy_nonoverlapping(self.elems, ptr, old_len);
 
-            ptr
+            // Deallocate the old array.
+            Vec::from_raw_parts(self.elems as *mut T, 0, old_len);
+
+            self.elems = ptr;
+        }
+    }
+
+    #[inline(never)]
+    fn double(&mut self) {
+        let len = self.bitmap.len();
+        let elem_size = mem::size_of::<T>();
+
+        let new_len = if len == 0 {
+            if elem_size.checked_mul(4).is_some() {
+                4
+            } else {
+                1
+            }
+        } else {
+            len.checked_mul(2).expect("len overflow")
         };
 
-        self.elems = new_elems;
-        self.bitmap.resize(new_len);
+        self.reserve_exact(new_len - len);
+    }
+
+    #[inline]
+    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
+        &*self.elems.offset(index as isize)
+    }
+
+    #[inline]
+    pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
+        &mut *(self.elems.offset(index as isize) as *mut T)
     }
 
     #[inline]
     fn validate_index(&self, index: usize) {
-        unsafe {
-            if index >= self.bitmap.len() || !self.bitmap.is_occupied(index) {
-                self.panic_invalid_index(index);
-            }
-        }
-    }
-
-    #[cold]
-    #[inline(never)]
-    unsafe fn panic_invalid_index(&self, index: usize) {
-        assert!(index < self.bitmap.len(),
-                "index out of bounds: the cap is {} but the index is {}", self.bitmap.len(), index);
-
-        panic!("uninitialized memory at index {}", index);
+        // This will also panic if the index is out of bounds.
+        assert!(self.bitmap.is_occupied(index), "vacant slot at `index`");
     }
 }
 
 impl<T> Drop for VecArena<T> {
     fn drop(&mut self) {
         unsafe {
+            // Drop all objects in the arena.
             for index in self.bitmap.iter() {
                 ptr::drop_in_place(self.elems.offset(index as isize) as *mut T);
             }
+
+            // Deallocate the old array.
             Vec::from_raw_parts(self.elems as *mut T, 0, self.bitmap.len());
         }
     }
@@ -125,18 +155,14 @@ impl<T> Index<usize> for VecArena<T> {
 
     fn index(&self, index: usize) -> &T {
         self.validate_index(index);
-        unsafe {
-            &*self.elems.offset(index as isize)
-        }
+        unsafe { self.get_unchecked(index) }
     }
 }
 
 impl<T> IndexMut<usize> for VecArena<T> {
     fn index_mut(&mut self, index: usize) -> &mut T {
         self.validate_index(index);
-        unsafe {
-            &mut *(self.elems.offset(index as isize) as *mut T)
-        }
+        unsafe { self.get_unchecked_mut(index) }
     }
 }
 

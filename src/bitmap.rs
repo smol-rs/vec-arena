@@ -27,6 +27,12 @@ fn slot_index(block: usize, offset: usize) -> usize {
     block * bits() + offset
 }
 
+/// Given a slot `index` in the bitmap, returns it's block index and offset within the block.
+#[inline]
+fn block_and_offset(index: usize) -> (usize, usize) {
+    (index / bits(), index % bits())
+}
+
 /// Keeps track of occupied and vacant slots in `VecArena`.
 ///
 /// It's implemented as an array of blocks, where every block tracks only a small contiguous chunk
@@ -70,6 +76,7 @@ pub struct Bitmap {
 
 impl Bitmap {
     /// Constructs a new `Bitmap` with zero slots.
+    #[inline]
     pub fn new() -> Self {
         let data = {
             let mut vec = Vec::with_capacity(0);
@@ -105,40 +112,48 @@ impl Bitmap {
     pub fn acquire(&mut self) -> usize {
         assert!(self.occupied < self.len, "no vacant slots to acquire, len = {}", self.len);
 
-        let num_blocks = blocks_for(self.len);
-
         let block = if self.head == !0 {
             // The list is empty, so try the last block.
-            num_blocks - 1
+            blocks_for(self.len) - 1
         } else {
             // The list has a head. Take a vacant slot from the head block.
             self.head
         };
 
-        unsafe {
+        let index = unsafe {
             // Find the rightmost zero bit in the mask. Taking the rightmost zero is always ok,
             // even if this is the last block.
             let offset = (!*self.mask(block)).trailing_zeros() as usize;
             debug_assert!(offset < bits());
 
-            let index = slot_index(block, offset);
-            debug_assert!(index < self.len);
+            slot_index(block, offset)
+        };
+        self.acquire_at(index);
+        index
+    }
 
+    /// Marks the vacant slot at `index` as occupied.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the slot is already occupied.
+    pub fn acquire_at(&mut self, index: usize) {
+        assert!(index < self.len, "`index` out of bounds");
+
+        let (block, offset) = block_and_offset(index);
+        unsafe {
             // Mark the slot as occupied in the block's bit mask.
-            debug_assert!(*self.mask(block) >> offset & 1 == 0);
+            assert!(*self.mask(block) >> offset & 1 == 0, "occupied slot at `index`");
             *self.mask(block) ^= 1 << offset;
 
-            if block == self.head {
-                // If the block has just become fully occupied, remove it from the list.
-                if *self.mask(block) == !0 {
-                    let next = *self.next(block);
-                    self.link_blocks(!0, next);
-                    self.head = next;
-                }
+            // If the block has just become fully occupied, remove it from the list.
+            if block == self.head && *self.mask(block) == !0 {
+                let next = *self.next(block);
+                self.link_blocks(!0, next);
+                self.head = next;
             }
 
             self.occupied += 1;
-            index
         }
     }
 
@@ -148,12 +163,13 @@ impl Bitmap {
     ///
     /// Panics if the `index` is out of bounds or the slot is vacant.
     pub fn release(&mut self, index: usize) {
-        assert!(index < self.len);
+        assert!(index < self.len, "`index` out of bounds");
 
-        let block = index / bits();
-        let offset = index % bits();
-
+        let (block, offset) = block_and_offset(index);
         unsafe {
+            // Make sure we're not releasing a vacant slot.
+            assert!(*self.mask(block) >> offset & 1 == 1, "releasing a vacant slot");
+
             self.occupied -= 1;
 
             // If the block is fully occupied, insert it back into the list.
@@ -165,7 +181,6 @@ impl Bitmap {
             }
 
             // Mark the slot as vacant in the block's bit mask.
-            assert!(*self.mask(block) >> offset & 1 == 1);
             *self.mask(block) ^= 1 << offset;
         }
     }
@@ -264,19 +279,19 @@ impl Bitmap {
     /// Returns `true` if the slot at `index` is occupied.
     #[inline]
     pub fn is_occupied(&self, index: usize) -> bool {
-        assert!(index < self.len(), "`index` out of bounds");
+        assert!(index < self.len, "`index` out of bounds");
 
-        let block = index / bits();
-        let offset = index % bits();
+        let (block, offset) = block_and_offset(index);
         unsafe {
             *self.mask(block) >> offset & 1 != 0
         }
     }
 
     /// Returns an iterator over occupied slots.
+    #[inline]
     pub fn iter(&self) -> Iter {
         Iter {
-            bitmap: &self,
+            bitmap: self,
             block: 0,
             offset: 0,
         }
@@ -336,6 +351,7 @@ pub struct Iter<'a> {
 impl<'a> Iterator for Iter<'a> {
     type Item = usize;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let num_blocks = blocks_for(self.bitmap.len);
 
@@ -367,7 +383,9 @@ impl<'a> Iterator for Iter<'a> {
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let index = slot_index(self.block, self.offset);
-        (0, Some(self.bitmap.len() - index))
+        let low = 0;
+        let high = self.bitmap.len() - index;
+        (low, Some(high))
     }
 
     #[inline]

@@ -184,7 +184,7 @@ impl Bitmap {
     ///
     /// # Panics
     ///
-    /// Panics if the new capacity overflows `usize`.
+    /// Panics if the new number of slots overflows `usize`.
     pub fn reserve(&mut self, additional: usize) {
         let amortized = self.amortized_reserve(additional);
         self.reserve_exact(amortized);
@@ -192,11 +192,11 @@ impl Bitmap {
 
     /// Reserves exactly `additional` more slots for new elements to be inserted.
     ///
-    /// Note that the allocator may give the arena more space than it requests.
+    /// Note that the allocator may give the bitmap more space than it requests.
     ///
     /// # Panics
     ///
-    /// Panics if the new capacity overflows `usize`.
+    /// Panics if the new number of slots overflows `usize`.
     pub fn reserve_exact(&mut self, additional: usize) {
         let old_blocks = blocks_for(self.len);
         self.len = self.len.checked_add(additional).expect("len overflow");

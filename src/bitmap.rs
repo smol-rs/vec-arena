@@ -45,8 +45,8 @@ fn block_and_offset(index: usize) -> (usize, usize) {
 /// A block consists of:
 ///
 /// * a bit mask (one `usize`), in which zeros are for vacant slots and ones for occupied slots
-/// * index of the next block in the linked list
-/// * index of the previous block in the linked list
+/// * index of the successor block in the linked list
+/// * index of the predecessor block in the linked list
 ///
 /// The last block is tricky to handle because it might not have the same number of slots as other
 /// blocks, so it gets special treatment in the implementation.
@@ -54,8 +54,8 @@ pub struct Bitmap {
     /// Storage for the following sequences, in this order:
     ///
     /// * bit masks
-    /// * indices to next node
-    /// * indices to previous node
+    /// * indices to successor nodes
+    /// * indices to predecessor nodes
     ///
     /// All three sequences are stored in this single contiguous array.
     ///
@@ -148,9 +148,9 @@ impl Bitmap {
 
             // If the block has just become fully occupied, remove it from the list.
             if block == self.head && *self.mask(block) == !0 {
-                let next = *self.next(block);
-                self.link_blocks(!0, next);
-                self.head = next;
+                let succ = *self.successor(block);
+                self.link_blocks(!0, succ);
+                self.head = succ;
             }
 
             self.occupied += 1;
@@ -243,8 +243,8 @@ impl Bitmap {
                 ptr
             };
 
-            // Copy the three old subarrays (bit masks, next-indices, prev-indices) into the new
-            // array.
+            // Copy the three old subarrays (bit masks, successor indices, predecessor indices)
+            // into the new array.
             for i in 0..3 {
                 ptr::copy_nonoverlapping(
                     self.data.offset((old_blocks * i) as isize),
@@ -292,8 +292,9 @@ impl Bitmap {
     pub fn iter(&self) -> Iter {
         Iter {
             bitmap: self,
-            block: 0,
-            offset: 0,
+            // block: 0,
+            // offset: 0,
+            index: 0,
         }
     }
 
@@ -305,8 +306,8 @@ impl Bitmap {
     /// Links together blocks `a` and `b` so that `a` comes before `b` in the linked list.
     #[inline]
     unsafe fn link_blocks(&mut self, a: usize, b: usize) {
-        if a != !0 { *self.next(a) = b; }
-        if b != !0 { *self.prev(b) = a; }
+        if a != !0 { *self.successor(a) = b; }
+        if b != !0 { *self.predecessor(b) = a; }
     }
 
     /// Returns the pointer to the bit mask of `block`.
@@ -315,16 +316,41 @@ impl Bitmap {
         self.data.offset(block as isize)
     }
 
-    /// Returns the pointer to the index of the block after `block`.
+    /// Returns the pointer to the index of the successor of `block`.
     #[inline]
-    unsafe fn next(&self, block: usize) -> *mut usize {
+    unsafe fn successor(&self, block: usize) -> *mut usize {
         self.data.offset((blocks_for(self.len) + block) as isize)
     }
 
-    /// Returns the pointer to the index of the block before `block`.
+    /// Returns the pointer to the index of the predecessor of `block`.
     #[inline]
-    unsafe fn prev(&self, block: usize) -> *mut usize {
+    unsafe fn predecessor(&self, block: usize) -> *mut usize {
         self.data.offset((2 * blocks_for(self.len) + block) as isize)
+    }
+
+    /// Returns the next occupied slot starting from (and including) the specified `index`.
+    pub fn next_occupied(&self, index: usize) -> Option<usize> {
+        let num_blocks = blocks_for(self.len);
+        let (mut block, mut offset) = block_and_offset(index);
+
+        while block < num_blocks {
+            let mask = unsafe { *self.mask(block) };
+
+            if offset == bits() || mask == 0 {
+                // Nothing left in the current block or it's empty. Go to the next block.
+                block += 1;
+                offset = 0;
+            } else {
+                // Find the next occupied slot in this block.
+                while offset < bits() {
+                    if mask >> offset & 1 == 1 {
+                        return Some(slot_index(block, offset));
+                    }
+                    offset += 1;
+                }
+            }
+        }
+        None
     }
 }
 
@@ -341,11 +367,8 @@ pub struct Iter<'a> {
     /// The bitmap to iterate over.
     bitmap: &'a Bitmap,
 
-    /// Index of the current block.
-    block: usize,
-
-    /// Index of the slot within the current block.
-    offset: usize,
+    /// Index of the current slot.
+    index: usize,
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -353,38 +376,16 @@ impl<'a> Iterator for Iter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let num_blocks = blocks_for(self.bitmap.len);
-
-        while self.block < num_blocks {
-            let mask = unsafe { *self.bitmap.mask(self.block) };
-
-            if self.offset == bits() || mask == 0 {
-                // Nothing left in the current block or it's empty. Go to the next block.
-                self.block += 1;
-                self.offset = 0;
-            } else {
-                // Find the next occupied slot in this block.
-                while self.offset < bits() && mask >> self.offset & 1 == 0 {
-                    self.offset += 1;
-                }
-
-                if self.offset < bits() {
-                    let index = slot_index(self.block, self.offset);
-                    debug_assert!(index < self.bitmap.len);
-
-                    self.offset += 1;
-                    return Some(index);
-                }
-            }
-        }
-        None
+        self.bitmap.next_occupied(self.index).map(|index| {
+            self.index = index + 1;
+            index
+        })
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let index = slot_index(self.block, self.offset);
         let low = 0;
-        let high = self.bitmap.len() - index;
+        let high = self.bitmap.len() - self.index;
         (low, Some(high))
     }
 

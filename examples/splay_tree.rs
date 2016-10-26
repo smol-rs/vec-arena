@@ -31,6 +31,7 @@ impl<T> Splay<T> where T: Ord + Eq + Clone {
         }
     }
 
+    // #[inline(always)]
     fn rotate(&mut self, a: usize, b: usize) {
         let p = self.arena[a].parent;
 

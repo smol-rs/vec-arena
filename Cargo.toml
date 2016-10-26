@@ -4,14 +4,6 @@ version = "0.0.1"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 description = "Arena that allows inserting, removing, and accessing objects by indices"
 repository = "https://github.com/stjepang/vec-arena"
+documentation = "https://docs.rs/vec-arena"
 license = "Apache-2.0/MIT"
 readme = "README.md"
-# documentation = "TODO: url to docs on github"
-
-[lib]
-name = "vec_arena"
-path = "src/lib.rs"
-
-[[bin]]
-name = "splay_tree"
-path = "examples/splay_tree.rs"

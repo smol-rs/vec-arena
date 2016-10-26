@@ -13,5 +13,5 @@ name = "vec_arena"
 path = "src/lib.rs"
 
 [[bin]]
-name = "bench_splay"
-path = "benches/splay.rs"
+name = "splay_tree"
+path = "examples/splay_tree.rs"

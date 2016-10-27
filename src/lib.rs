@@ -14,19 +14,18 @@ use std::ptr;
 
 mod bitmap;
 
-// TODO: fn insert_near / nearest_vacant
-// TODO: DoubleEndedIterator
-
 /// An arena that can insert and remove objects of a single type.
 ///
-/// `VecArena<T>` is in many ways like `Vec<Option<T>>` because it holds an array of slots for
+/// `VecArena<T>` resembles `Vec<Option<T>>` a lot because it holds an array of slots for
 /// storing objects. A slot can be either occupied or vacant. Inserting a new object into an arena
 /// involves finding a vacant slot and placing the object into the slot. Removing an object means
 /// taking it out of the slot and marking it as vacant.
 ///
 /// Internally, a bitmap is used instead of `Option`s to conserve space and improve cache
-/// performance. Every object access makes sure that the accessed object really exists, otherwise
-/// it panics.
+/// performance. Every indexing operation checks that an object really exists at the specified
+/// index, otherwise it panics.
+// TODO: Explain that arena[index] is equivalent to arena.get(index).unwrap() or
+//       arena.get_mut(index).unwrap()
 // TODO: a bunch of examples, see the docs for Vec for inspiration.
 pub struct VecArena<T> {
     // TODO: Docs for these fields
@@ -81,18 +80,6 @@ impl<T> VecArena<T> {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// Returns `true` if the slot at `index` is vacant.
-    #[inline]
-    pub fn is_vacant(&self, index: usize) -> bool {
-        !self.bitmap.is_occupied(index)
-    }
-
-    /// Returns `true` if the slot at `index` is occupied.
-    #[inline]
-    pub fn is_occupied(&self, index: usize) -> bool {
-        self.bitmap.is_occupied(index)
     }
 
     /// Inserts an object into the arena and returns the slot index in which it was stored.
@@ -150,11 +137,8 @@ impl<T> VecArena<T> {
     /// Panics if `index` is out of bounds.
     #[inline]
     pub fn get(&self, index: usize) -> Option<&T> {
-        self.guard_index(index);
-        if self.is_occupied(index) {
-            unsafe {
-                Some(self.get_unchecked(index))
-            }
+        if self.bitmap.is_occupied(index) {
+            unsafe { Some(self.get_unchecked(index)) }
         } else {
             None
         }
@@ -167,11 +151,8 @@ impl<T> VecArena<T> {
     /// Panics if `index` is out of bounds.
     #[inline]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
-        self.guard_index(index);
-        if self.is_occupied(index) {
-            unsafe {
-                Some(self.get_unchecked_mut(index))
-            }
+        if self.bitmap.is_occupied(index) {
+            unsafe { Some(self.get_unchecked_mut(index)) }
         } else {
             None
         }
@@ -283,19 +264,6 @@ impl<T> VecArena<T> {
     pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
         &mut *(self.slots.offset(index as isize) as *mut T)
     }
-
-    /// Panics if `index` is out of bounds.
-    #[inline]
-    fn guard_index(&self, index: usize) {
-        assert!(index < self.bitmap.len(), "`index` out of bounds");
-    }
-
-    /// Panics if `index` is out of bounds or the slot is vacant.
-    #[inline]
-    fn guard_occupied(&self, index: usize) {
-        // `is_occupied` will panic if the index is out of bounds.
-        assert!(self.bitmap.is_occupied(index), "vacant slot at `index`");
-    }
 }
 
 impl<T> Drop for VecArena<T> {
@@ -317,20 +285,14 @@ impl<T> Index<usize> for VecArena<T> {
 
     #[inline]
     fn index(&self, index: usize) -> &T {
-        self.guard_occupied(index);
-        unsafe {
-            self.get_unchecked(index)
-        }
+        self.get(index).expect("vacant slot at `index`")
     }
 }
 
 impl<T> IndexMut<usize> for VecArena<T> {
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut T {
-        self.guard_occupied(index);
-        unsafe {
-            self.get_unchecked_mut(index)
-        }
+        self.get_mut(index).expect("vacant slot at `index`")
     }
 }
 

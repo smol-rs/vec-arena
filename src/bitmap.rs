@@ -292,8 +292,6 @@ impl Bitmap {
     pub fn iter(&self) -> Iter {
         Iter {
             bitmap: self,
-            // block: 0,
-            // offset: 0,
             index: 0,
         }
     }
@@ -329,26 +327,43 @@ impl Bitmap {
     }
 
     /// Returns the next occupied slot starting from (and including) the specified `index`.
-    pub fn next_occupied(&self, index: usize) -> Option<usize> {
-        let num_blocks = blocks_for(self.len);
-        let (mut block, mut offset) = block_and_offset(index);
-
-        while block < num_blocks {
+    pub fn next_occupied(&self, mut index: usize) -> Option<usize> {
+        while index < self.len() {
+            let (block, offset) = block_and_offset(index);
             let mask = unsafe { *self.mask(block) };
 
-            if offset == bits() || mask == 0 {
-                // Nothing left in the current block or it's empty. Go to the next block.
-                block += 1;
-                offset = 0;
-            } else {
-                // Find the next occupied slot in this block.
-                while offset < bits() {
-                    if mask >> offset & 1 == 1 {
-                        return Some(slot_index(block, offset));
+            if mask != 0 {
+                for off in offset .. bits() {
+                    if mask >> off & 1 == 1 {
+                        return Some(slot_index(block, off));
                     }
-                    offset += 1;
                 }
             }
+
+            index = slot_index(block + 1, 0);
+        }
+        None
+    }
+
+    /// Returns the previous occupied slot before the specified `index`.
+    pub fn previous_occupied(&self, mut index: usize) -> Option<usize> {
+        index = cmp::min(index, self.len());
+        loop {
+            let (block, offset) = block_and_offset(index);
+            let mask = unsafe { *self.mask(block) };
+
+            if mask != 0 {
+                for off in (0 .. offset).rev() {
+                    if mask >> off & 1 == 1 {
+                        return Some(slot_index(block, off));
+                    }
+                }
+            }
+
+            if block == 0 {
+                break;
+            }
+            index = slot_index(block - 1, 0);
         }
         None
     }

@@ -372,7 +372,7 @@ impl Bitmap {
 impl Drop for Bitmap {
     fn drop(&mut self) {
         unsafe {
-            Vec::from_raw_parts(self.data, 0, 2 * blocks_for(self.len));
+            Vec::from_raw_parts(self.data, 0, 3 * blocks_for(self.len));
         }
     }
 }

@@ -2,6 +2,9 @@ extern crate vec_arena;
 
 use vec_arena::VecArena;
 
+/// The null index, akin to null pointers.
+const NULL: usize = !0;
+
 struct Node<T> {
     parent: usize,
     children: [usize; 2],
@@ -11,8 +14,8 @@ struct Node<T> {
 impl<T> Node<T> {
     fn new(value: T) -> Node<T> {
         Node {
-            parent: !0,
-            children: [!0, !0],
+            parent: NULL,
+            children: [NULL, NULL],
             value: value,
         }
     }
@@ -28,7 +31,7 @@ impl<T> Splay<T> where T: Ord {
     fn new() -> Splay<T> {
         Splay {
             arena: VecArena::new(),
-            root: !0,
+            root: NULL,
         }
     }
 
@@ -36,7 +39,7 @@ impl<T> Splay<T> where T: Ord {
     #[inline(always)]
     fn link(&mut self, p: usize, c: usize, dir: usize) {
         self.arena[p].children[dir] = c;
-        if c != !0 {
+        if c != NULL {
             self.arena[c].parent = p;
         }
     }
@@ -61,10 +64,10 @@ impl<T> Splay<T> where T: Ord {
         self.link(p, t, dir);
         self.link(c, p, dir ^ 1);
 
-        if g == !0 {
+        if g == NULL {
             // There is no grandparent, so `c` becomes the root.
             self.root = c;
-            self.arena[c].parent = !0;
+            self.arena[c].parent = NULL;
         } else {
             // Link `g` and `c` together.
             let dir = if self.arena[g].children[0] == p { 0 } else { 1 };
@@ -82,14 +85,14 @@ impl<T> Splay<T> where T: Ord {
 
             // Find the parent.
             let p = self.arena[c].parent;
-            if p == !0 {
+            if p == NULL {
                 // There is no parent. That means `c` is the root.
                 break;
             }
 
             // Find the grandparent.
             let g = self.arena[p].parent;
-            if g == !0 {
+            if g == NULL {
                 // There is no grandparent. Just one rotation is left.
                 // Zig step.
                 self.rotate(p, c);
@@ -117,7 +120,7 @@ impl<T> Splay<T> where T: Ord {
 
         let n = self.arena.insert(Node::new(value));
 
-        if self.root == !0 {
+        if self.root == NULL {
             self.root = n;
         } else {
             let mut p = self.root;
@@ -126,7 +129,7 @@ impl<T> Splay<T> where T: Ord {
                 let dir = if self.arena[n].value < self.arena[p].value { 0 } else { 1 };
                 let c = self.arena[p].children[dir];
 
-                if c == !0 {
+                if c == NULL {
                     self.link(p, n, dir);
                     self.splay(n);
                     break;
@@ -138,7 +141,7 @@ impl<T> Splay<T> where T: Ord {
 
     /// Pretty-prints the subtree rooted at `node`, indented by `depth` spaces.
     fn print(&self, node: usize, depth: usize) where T: std::fmt::Display {
-        if node != !0 {
+        if node != NULL {
             // Print the left subtree.
             self.print(self.arena[node].children[0], depth + 1);
 

@@ -2,6 +2,8 @@ extern crate vec_arena;
 
 use vec_arena::VecArena;
 
+const NULL: usize = !0;
+
 struct Node<T> {
     prev: usize,
     next: usize,
@@ -18,8 +20,8 @@ impl<T> List<T> {
     fn new() -> Self {
         List {
             arena: VecArena::new(),
-            head: !0,
-            tail: !0,
+            head: NULL,
+            tail: NULL,
         }
     }
 
@@ -29,15 +31,15 @@ impl<T> List<T> {
 
     fn new_node(&mut self, value: T) -> usize {
         self.arena.insert(Node {
-            prev: !0,
-            next: !0,
+            prev: NULL,
+            next: NULL,
             value: value,
         })
     }
 
     fn link(&mut self, a: usize, b: usize) {
-        if a != !0 { self.arena[a].next = b; }
-        if b != !0 { self.arena[b].prev = a; }
+        if a != NULL { self.arena[a].next = b; }
+        if b != NULL { self.arena[b].prev = a; }
     }
 
     fn push_back(&mut self, value: T) -> usize {
@@ -47,7 +49,7 @@ impl<T> List<T> {
         self.link(tail, node);
 
         self.tail = node;
-        if self.head == !0 {
+        if self.head == NULL {
             self.head = node;
         }
         node
@@ -56,10 +58,10 @@ impl<T> List<T> {
     fn pop_front(&mut self) -> T {
         let node = self.arena.remove(self.head);
 
-        self.link(!0, node.next);
+        self.link(NULL, node.next);
         self.head = node.next;
-        if node.next == !0 {
-            self.tail = !0;
+        if node.next == NULL {
+            self.tail = NULL;
         }
         node.value
     }

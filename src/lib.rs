@@ -1,54 +1,110 @@
 //! A fast general-purpose object arena.
 //!
-//! This crate contains `VecArena`, which is an allocator that can hold objects of only one type.
-//! It can allocate space for new objects and reclaim space upon removal of objects. The amount
-//! of space to hold objects is dynamically expanded as needed. Inserting objects into an arena
-//! is amortized `O(1)`, and removing is `O(1)`.
-// TODO: An example of a doubly linked list?
+//! `Arena<T>` is basically just a `Vec<Option<T>>`, which allows you to:
+//!
+//! * Insert an object (reuse an existing `None` element, or append to the end)
+//! * Remove object at a specified index
+//! * Access object at a specified index
+//!
+//! It's useful in situations where you need to create complex graphs. For example:
+//!
+//! * Doubly linked lists
+//! * Bidirectional trees
+//! * Widget hierarchies in GUIs
+//! * Graphs with circular references
+//!
+//! As a rule of thumb, if building a data structure using `Rc` and `RefCell` gets too messy or
+//! costly, `Arena` might be a better choice.
 
-use bitmap::Bitmap;
+use std::iter;
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Index, IndexMut};
-use std::ptr;
+use std::slice;
+use std::vec;
 
-mod bitmap;
-
-/// An arena that can insert and remove objects of a single type.
-///
-/// `VecArena<T>` resembles `Vec<Option<T>>` a lot because it holds an array of slots for
-/// storing objects. A slot can be either occupied or vacant. Inserting a new object into an arena
-/// involves finding a vacant slot and placing the object into the slot. Removing an object means
-/// taking it out of the slot and marking it as vacant.
-///
-/// Internally, a bitmap is used instead of `Option`s to conserve space and improve cache
-/// performance. Every indexing operation checks that an object really exists at the specified
-/// index, otherwise it panics.
-// TODO: Explain that arena[index] is equivalent to arena.get(index).unwrap() or
-//       arena.get_mut(index).unwrap()
-// TODO: a bunch of examples, see the docs for Vec for inspiration.
-pub struct VecArena<T> {
-    // TODO: Docs for these fields
-    slots: *const T,
-    bitmap: Bitmap,
-    marker: PhantomData<T>,
+#[derive(Clone)]
+enum Slot<T> {
+    Vacant(usize),
+    Occupied(T),
 }
 
-impl<T> VecArena<T> {
+/// An object arena.
+///
+/// `Arena<T>` holds an array of slots for storing objects.
+/// Every slot is always in one of two states: occupied or vacant.
+///
+/// Essentially, this is equivalent to `Vec<Option<T>>`.
+///
+/// # Insert and remove
+///
+/// When inserting a new object into arena, a vacant slot is found and then the object is placed
+/// into the slot. If there are no vacant slots, the array is reallocated with bigger capacity.
+/// The cost of insertion is amortized `O(1)`.
+///
+/// When removing an object, the slot containing it is marked as vacant and the object is returned.
+/// The cost of removal is `O(1)`.
+///
+/// ```
+/// use vec_arena::Arena;
+///
+/// let mut arena = Arena::new();
+/// let a = arena.insert(10);
+/// let b = arena.insert(20);
+///
+/// assert_eq!(a, 0); // 10 was placed at index 0
+/// assert_eq!(b, 1); // 20 was placed at index 1
+///
+/// assert_eq!(arena.remove(a), Some(10));
+/// assert_eq!(arena.get(a), None); // slot at index 0 is now vacant
+///
+/// assert_eq!(arena.insert(30), 0); // slot at index 0 is reused
+/// ```
+///
+/// # Indexing
+///
+/// You can also access objects in an arena by index, just like you would in a `Vec`.
+/// However, accessing a vacant slot by index or using an out-of-bounds index will result in panic.
+///
+/// ```
+/// use vec_arena::Arena;
+///
+/// let mut arena = Arena::new();
+/// let a = arena.insert(10);
+/// let b = arena.insert(20);
+///
+/// assert_eq!(arena[a], 10);
+/// assert_eq!(arena[b], 20);
+///
+/// arena[a] += arena[b];
+/// assert_eq!(arena[a], 30);
+/// ```
+///
+/// To access slots without fear of panicking, use `get` and `get_mut`, which return `Option`s.
+pub struct Arena<T> {
+    slots: Vec<Slot<T>>,
+    len: usize,
+    head: usize,
+}
+
+impl<T> Arena<T> {
     /// Constructs a new, empty arena.
     ///
     /// The arena will not allocate until objects are inserted into it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena: Arena<i32> = Arena::new();
+    /// ```
+    #[inline]
     pub fn new() -> Self {
-        let slots = {
-            let mut vec = Vec::with_capacity(0);
-            let ptr = vec.as_mut_ptr();
-            mem::forget(vec);
-            ptr
-        };
-        VecArena {
-            slots: slots,
-            bitmap: Bitmap::new(),
-            marker: PhantomData,
+        Arena {
+            slots: Vec::new(),
+            len: 0,
+            head: !0,
         }
     }
 
@@ -56,231 +112,330 @@ impl<T> VecArena<T> {
     ///
     /// The arena will be able to hold exactly `capacity` objects without reallocating.
     /// If `capacity` is 0, the arena will not allocate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::with_capacity(10);
+    ///
+    /// assert_eq!(arena.len(), 0);
+    /// assert_eq!(arena.capacity(), 10);
+    ///
+    /// // These inserts are done without reallocating...
+    /// for i in 0..10 {
+    ///     arena.insert(i);
+    /// }
+    /// assert!(arena.capacity() == 10);
+    ///
+    /// // ... but this one will reallocate.
+    /// arena.insert(11);
+    /// assert!(arena.capacity() > 10);
+    /// ```
+    #[inline]
     pub fn with_capacity(cap: usize) -> Self {
-        let mut arena = Self::new();
-        arena.reserve_exact(cap);
-        arena
+        Arena {
+            slots: Vec::with_capacity(cap),
+            len: 0,
+            head: !0,
+        }
     }
 
-    /// Returns the number of objects the arena can hold without reallocating.
-    /// In other words, this is the number of slots.
+    /// Returns the number of slots in the arena.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let arena: Arena<i32> = Arena::with_capacity(10);
+    /// assert_eq!(arena.capacity(), 10);
+    /// ```
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.bitmap.len()
+        self.slots.capacity()
     }
 
-    /// Returns the number of objects in the arena.
-    /// In other words, this is the number of occupied slots.
+    /// Returns the number of occupied slots in the arena.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// assert_eq!(arena.len(), 0);
+    ///
+    /// for i in 0..10 {
+    ///     arena.insert(());
+    ///     assert_eq!(arena.len(), i + 1);
+    /// }
+    /// ```
     #[inline]
     pub fn len(&self) -> usize {
-        self.bitmap.occupied()
+        self.len
     }
 
-    /// Returns `true` if the arena holds no objects.
+    /// Returns `true` if all slots are vacant.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// assert!(arena.is_empty());
+    ///
+    /// arena.insert(1);
+    /// assert!(!arena.is_empty());
+    /// ```
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len == 0
     }
 
-    /// Inserts an object into the arena and returns the slot index in which it was stored.
+    /// Inserts an object into the arena and returns the slot index it was stored in.
     /// The arena will reallocate if it's full.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    ///
+    /// let a = arena.insert(1);
+    /// let b = arena.insert(2);
+    /// assert!(a != b);
+    /// ```
+    #[inline]
     pub fn insert(&mut self, object: T) -> usize {
-        if self.bitmap.occupied() == self.bitmap.len() {
-            self.double();
+        if self.head == !0 {
+            let index = self.len;
+            self.slots.push(Slot::Occupied(object));
+            self.len += 1;
+            index
+        } else {
+            let index = self.head;
+            match self.slots[index] {
+                Slot::Vacant(next) => {
+                    self.head = next;
+                    self.slots[index] = Slot::Occupied(object);
+                },
+                Slot::Occupied(_) => unreachable!(),
+            }
+            index
         }
-
-        let index = self.bitmap.acquire();
-        unsafe {
-            ptr::write(self.slots.offset(index as isize) as *mut T, object);
-        }
-        index
-    }
-
-    /// Inserts an object into the vacant slot at `index`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `index` is out of bounds or the slot is already occupied.
-    pub fn insert_at(&mut self, index: usize, object: T) -> usize {
-        self.bitmap.acquire_at(index);
-        unsafe {
-            ptr::write(self.slots.offset(index as isize) as *mut T, object);
-        }
-        index
     }
 
     /// Removes the object stored at `index` from the arena and returns it.
     ///
-    /// # Panics
+    /// `None` is returned in case the slot is vacant, or `index` is out of bounds.
     ///
-    /// Panics if `index` is out of bounds or the slot is already vacant.
-    pub fn remove(&mut self, index: usize) -> T {
-        // `release` will panic if the index is out of bounds or the slot is already vacant.
-        self.bitmap.release(index);
-
-        unsafe {
-            ptr::read(self.slots.offset(index as isize) as *mut T)
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// let a = arena.insert("hello");
+    ///
+    /// assert_eq!(arena.len(), 1);
+    /// assert_eq!(arena.remove(a), Some("hello"));
+    ///
+    /// assert_eq!(arena.len(), 0);
+    /// assert_eq!(arena.remove(a), None);
+    /// ```
+    #[inline]
+    pub fn remove(&mut self, index: usize) -> Option<T> {
+        match self.slots.get_mut(index) {
+            None => None,
+            Some(&mut Slot::Vacant(_)) => None,
+            Some(slot @ &mut Slot::Occupied(_)) => {
+                if let Slot::Occupied(object) = mem::replace(slot, Slot::Vacant(self.head)) {
+                    self.head = index;
+                    self.len -= 1;
+                    Some(object)
+                } else {
+                    unreachable!();
+                }
+            }
         }
     }
 
     /// Clears the arena, removing and dropping all objects it holds. Keeps the allocated memory
     /// for reuse.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// for i in 0..10 {
+    ///     arena.insert(i);
+    /// }
+    ///
+    /// assert_eq!(arena.len(), 10);
+    /// arena.clear();
+    /// assert_eq!(arena.len(), 0);
+    /// ```
+    #[inline]
     pub fn clear(&mut self) {
-        let mut arena = VecArena::with_capacity(self.capacity());
-        mem::swap(self, &mut arena);
+        self.slots.clear();
+        self.len = 0;
+        self.head = !0;
     }
 
-    /// Returns a reference to the object stored at `index`.
+    /// Returns a reference to the object stored at `index`, or `None` if it's out of bounds.
     ///
-    /// # Panics
+    /// # Examples
     ///
-    /// Panics if `index` is out of bounds.
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// let index = arena.insert("hello");
+    ///
+    /// assert_eq!(arena.get(index), Some(&"hello"));
+    /// arena.remove(index);
+    /// assert_eq!(arena.get(index), None);
+    /// ```
     #[inline]
     pub fn get(&self, index: usize) -> Option<&T> {
-        if self.bitmap.is_occupied(index) {
-            unsafe { Some(self.get_unchecked(index)) }
-        } else {
-            None
+        match self.slots.get(index) {
+            None => None,
+            Some(&Slot::Vacant(_)) => None,
+            Some(&Slot::Occupied(ref object)) => Some(object),
         }
     }
 
-    /// Returns a mutable reference to the object stored at `index`.
+    /// Returns a mutable reference to the object stored at `index`, or `None` if it's out of
+    /// bounds.
     ///
-    /// # Panics
+    /// # Examples
     ///
-    /// Panics if `index` is out of bounds.
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// let index = arena.insert(7);
+    ///
+    /// assert_eq!(arena.get_mut(index), Some(&mut 7));
+    /// *arena.get_mut(index).unwrap() *= 10;
+    /// assert_eq!(arena.get_mut(index), Some(&mut 70));
+    /// ```
     #[inline]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
-        if self.bitmap.is_occupied(index) {
-            unsafe { Some(self.get_unchecked_mut(index)) }
-        } else {
-            None
+        match self.slots.get_mut(index) {
+            None => None,
+            Some(&mut Slot::Vacant(_)) => None,
+            Some(&mut Slot::Occupied(ref mut object)) => Some(object),
         }
     }
 
-    /// Reserves capacity for at least `additional` more elements to be inserted. The arena may
+    /// Reserves capacity for at least `additional` more objects to be inserted. The arena may
     /// reserve more space to avoid frequent reallocations.
     ///
     /// # Panics
     ///
     /// Panics if the new capacity overflows `usize`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// arena.insert("hello");
+    ///
+    /// arena.reserve(10);
+    /// assert!(arena.capacity() >= 11);
+    /// ```
     pub fn reserve(&mut self, additional: usize) {
-        let len = self.bitmap.len();
-        self.bitmap.reserve(additional);
-        unsafe {
-            self.reallocate(len);
+        let vacant = self.slots.len() - self.len;
+        if additional > vacant {
+            self.slots.reserve(additional - vacant);
         }
     }
 
-    /// Reserves the minimum capacity for exactly `additional` more elements to be inserted.
+    /// Reserves the minimum capacity for exactly `additional` more objects to be inserted.
     ///
     /// Note that the allocator may give the arena more space than it requests.
     ///
     /// # Panics
     ///
     /// Panics if the new capacity overflows `usize`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// arena.insert("hello");
+    ///
+    /// arena.reserve_exact(10);
+    /// assert!(arena.capacity() >= 11);
+    /// ```
     pub fn reserve_exact(&mut self, additional: usize) {
-        let len = self.bitmap.len();
-        self.bitmap.reserve_exact(additional);
-        unsafe {
-            self.reallocate(len);
+        let vacant = self.slots.len() - self.len;
+        if additional > vacant {
+            self.slots.reserve_exact(additional - vacant);
         }
     }
 
-    /// Reallocates the object array because the bitmap was resized.
-    unsafe fn reallocate(&mut self, old_len: usize) {
-        let new_len = self.bitmap.len();
-
-        // Allocate a new array.
-        let mut vec = Vec::with_capacity(new_len);
-        let ptr = vec.as_mut_ptr();
-        mem::forget(vec);
-
-        // Copy data into the new array.
-        ptr::copy_nonoverlapping(self.slots, ptr, old_len);
-
-        // Deallocate the old array.
-        Vec::from_raw_parts(self.slots as *mut T, 0, old_len);
-
-        self.slots = ptr;
-    }
-
-    /// Doubles the capacity of the arena.
-    #[cold]
-    #[inline(never)]
-    fn double(&mut self) {
-        let len = self.bitmap.len();
-        let elem_size = mem::size_of::<T>();
-
-        let new_len = if len == 0 {
-            if elem_size.checked_mul(4).is_some() {
-                4
-            } else {
-                1
-            }
-        } else {
-            len.checked_mul(2).expect("len overflow")
-        };
-
-        self.reserve_exact(new_len - len);
-    }
-
+    /// Returns an iterator over occupied slots.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// arena.insert(1);
+    /// arena.insert(2);
+    /// arena.insert(4);
+    ///
+    /// let mut iterator = arena.iter();
+    /// assert_eq!(iterator.next(), Some((0, &1)));
+    /// assert_eq!(iterator.next(), Some((1, &2)));
+    /// assert_eq!(iterator.next(), Some((2, &4)));
+    /// ```
     #[inline]
     pub fn iter(&self) -> Iter<T> {
-        Iter {
-            arena: self,
-            index: 0,
-        }
+        Iter { slots: self.slots.iter().enumerate() }
     }
 
+    /// Returns an iterator that returns mutable references to objects.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// arena.insert("zero".to_string());
+    /// arena.insert("one".to_string());
+    /// arena.insert("two".to_string());
+    ///
+    /// for (index, object) in arena.iter_mut() {
+    ///     *object = index.to_string() + " " + object;
+    /// }
+    ///
+    /// let mut iterator = arena.iter();
+    /// assert_eq!(iterator.next(), Some((0, &"0 zero".to_string())));
+    /// assert_eq!(iterator.next(), Some((1, &"1 one".to_string())));
+    /// assert_eq!(iterator.next(), Some((2, &"2 two".to_string())));
+    /// ```
     #[inline]
     pub fn iter_mut(&mut self) -> IterMut<T> {
-        IterMut {
-            slots: self.slots as *mut T,
-            bitmap: &self.bitmap,
-            index: 0,
-            marker: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn drain(&mut self) -> Drain<T> {
-        Drain {
-            arena: self,
-            index: 0,
-        }
-    }
-
-    /// Returns a reference to the object at `index`, without bounds checking nor checking that
-    /// the object exists.
-    #[inline]
-    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
-        &*self.slots.offset(index as isize)
-    }
-
-    /// Returns a mutable reference to the object at `index`, without bounds checking nor checking
-    /// that the object exists.
-    #[inline]
-    pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
-        &mut *(self.slots.offset(index as isize) as *mut T)
+        IterMut { slots: self.slots.iter_mut().enumerate() }
     }
 }
 
-impl<T> Drop for VecArena<T> {
-    fn drop(&mut self) {
-        unsafe {
-            // Drop all objects in the arena.
-            for index in self.bitmap.iter() {
-                ptr::drop_in_place(self.slots.offset(index as isize) as *mut T);
-            }
-
-            // Deallocate the old array.
-            Vec::from_raw_parts(self.slots as *mut T, 0, self.bitmap.len());
-        }
-    }
-}
-
-impl<T> Index<usize> for VecArena<T> {
+impl<T> Index<usize> for Arena<T> {
     type Output = T;
 
     #[inline]
@@ -289,43 +444,32 @@ impl<T> Index<usize> for VecArena<T> {
     }
 }
 
-impl<T> IndexMut<usize> for VecArena<T> {
+impl<T> IndexMut<usize> for Arena<T> {
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut T {
         self.get_mut(index).expect("vacant slot at `index`")
     }
 }
 
-impl<T> Default for VecArena<T> {
+impl<T> Default for Arena<T> {
     fn default() -> Self {
-        VecArena::new()
+        Arena::new()
     }
 }
 
-impl<T: Clone> Clone for VecArena<T> {
+impl<T: Clone> Clone for Arena<T> {
     fn clone(&self) -> Self {
-        let mut arena = VecArena::with_capacity(self.capacity());
-        for index in self.bitmap.iter() {
-            let clone = unsafe {
-                self.get_unchecked(index).clone()
-            };
-            arena.insert_at(index, clone);
+        Arena {
+            slots: self.slots.clone(),
+            len: self.len,
+            head: self.head,
         }
-        arena
     }
 }
 
+/// An iterator over the occupied slots in a `Arena`.
 pub struct IntoIter<T> {
-    slots: *const T,
-    bitmap: Bitmap,
-    index: usize,
-    marker: PhantomData<T>,
-}
-
-impl<T> Drop for IntoIter<T> {
-    fn drop(&mut self) {
-        while self.next().is_some() {}
-    }
+    slots: iter::Enumerate<vec::IntoIter<Slot<T>>>,
 }
 
 impl<T> Iterator for IntoIter<T> {
@@ -333,42 +477,28 @@ impl<T> Iterator for IntoIter<T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.bitmap.next_occupied(self.index).map(|index| {
-            self.index = index + 1;
-            unsafe {
-                self.bitmap.release(index);
-                (index, ptr::read(self.slots.offset(index as isize)))
+        while let Some((index, slot)) = self.slots.next() {
+            if let Slot::Occupied(object) = slot {
+                return Some((index, object));
             }
-        })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let lower = 0;
-        let upper = self.bitmap.len() - self.index;
-        (lower, Some(upper))
+        }
+        None
     }
 }
 
-impl<T> IntoIterator for VecArena<T> {
+impl<T> IntoIterator for Arena<T> {
     type Item = (usize, T);
     type IntoIter = IntoIter<T>;
 
-    fn into_iter(mut self) -> Self::IntoIter {
-        let iter = IntoIter {
-            slots: self.slots,
-            bitmap: mem::replace(&mut self.bitmap, Bitmap::new()),
-            index: 0,
-            marker: PhantomData,
-        };
-        mem::forget(self);
-        iter
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter { slots: self.slots.into_iter().enumerate() }
     }
 }
 
+/// An iterator over references to the occupied slots in a `Arena`.
 pub struct Iter<'a, T: 'a> {
-    arena: &'a VecArena<T>,
-    index: usize,
+    slots: iter::Enumerate<slice::Iter<'a, Slot<T>>>,
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
@@ -376,27 +506,18 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.arena.bitmap.next_occupied(self.index).map(|index| {
-            self.index = index + 1;
-            unsafe {
-                (index, self.arena.get_unchecked(index))
+        while let Some((index, slot)) = self.slots.next() {
+            if let Slot::Occupied(ref object) = *slot {
+                return Some((index, object));
             }
-        })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let lower = 0;
-        let upper = self.arena.capacity() - self.index;
-        (lower, Some(upper))
+        }
+        None
     }
 }
 
+/// An iterator over mutable references to the occupied slots in a `Arena`.
 pub struct IterMut<'a, T: 'a> {
-    slots: *mut T,
-    bitmap: &'a Bitmap,
-    index: usize,
-    marker: PhantomData<&'a mut T>,
+    slots: iter::Enumerate<slice::IterMut<'a, Slot<T>>>,
 }
 
 impl<'a, T> Iterator for IterMut<'a, T> {
@@ -404,46 +525,12 @@ impl<'a, T> Iterator for IterMut<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.bitmap.next_occupied(self.index).map(|index| {
-            self.index = index + 1;
-            unsafe {
-                (index, &mut *self.slots.offset(index as isize))
+        while let Some((index, slot)) = self.slots.next() {
+            if let Slot::Occupied(ref mut object) = *slot {
+                return Some((index, object));
             }
-        })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let lower = 0;
-        let upper = self.bitmap.len() - self.index;
-        (lower, Some(upper))
-    }
-}
-
-pub struct Drain<'a, T: 'a> {
-    arena: &'a mut VecArena<T>,
-    index: usize,
-}
-
-impl<'a, T> Iterator for Drain<'a, T> {
-    type Item = (usize, T);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.arena.bitmap.next_occupied(self.index).map(|index| {
-            self.index = index + 1;
-            unsafe {
-                self.arena.bitmap.release(index);
-                (index, ptr::read(self.arena.slots.offset(index as isize)))
-            }
-        })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let lower = 0;
-        let upper = self.arena.capacity() - self.index;
-        (lower, Some(upper))
+        }
+        None
     }
 }
 
@@ -451,11 +538,9 @@ impl<'a, T> Iterator for Drain<'a, T> {
 mod tests {
     use super::*;
 
-    // TODO: test variance: https://github.com/rust-lang/rust/pull/30998/files
-
     #[test]
     fn it_works() {
-        let mut arena = VecArena::new();
+        let mut arena = Arena::new();
         for i in 0..10 {
             assert_eq!(arena.insert(()), i);
             assert!(arena[i] == ());

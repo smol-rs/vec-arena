@@ -1,13 +1,23 @@
 extern crate vec_arena;
 
-use vec_arena::VecArena;
+use vec_arena::Arena;
 
 /// The null index, akin to null pointers.
+///
+/// Just like a null pointer indicates an address no object is ever stored at,
+/// the null index indicates an index no object is ever stored at.
+///
+/// Number `!0` is the largest possible value representable by `usize`.
 const NULL: usize = !0;
 
 struct Node<T> {
+    /// Parent node.
     parent: usize,
+
+    /// Left and right child.
     children: [usize; 2],
+
+    /// Actual value stored in node.
     value: T,
 }
 
@@ -22,7 +32,10 @@ impl<T> Node<T> {
 }
 
 struct Splay<T> {
-    arena: VecArena<Node<T>>,
+    /// This is where nodes are stored.
+    arena: Arena<Node<T>>,
+
+    /// The root node.
     root: usize,
 }
 
@@ -30,7 +43,7 @@ impl<T> Splay<T> where T: Ord {
     /// Constructs a new, empty splay tree.
     fn new() -> Splay<T> {
         Splay {
-            arena: VecArena::new(),
+            arena: Arena::with_capacity(1000000),
             root: NULL,
         }
     }
@@ -75,7 +88,7 @@ impl<T> Splay<T> where T: Ord {
         }
     }
 
-    /// Splays node
+    /// Splays a node, rebalancing the tree in process.
     fn splay(&mut self, c: usize) {
         loop {
             // Variables:
@@ -93,7 +106,7 @@ impl<T> Splay<T> where T: Ord {
             // Find the grandparent.
             let g = self.arena[p].parent;
             if g == NULL {
-                // There is no grandparent. Just one rotation is left.
+                // There is no grandparent. Just one more rotation is left.
                 // Zig step.
                 self.rotate(p, c);
                 break;
@@ -139,17 +152,17 @@ impl<T> Splay<T> where T: Ord {
         }
     }
 
-    /// Pretty-prints the subtree rooted at `node`, indented by `depth` spaces.
-    fn print(&self, node: usize, depth: usize) where T: std::fmt::Display {
+    /// Pretty-prints the subtree rooted at `node`, indented by `indent` spaces.
+    fn print(&self, node: usize, indent: usize) where T: std::fmt::Display {
         if node != NULL {
             // Print the left subtree.
-            self.print(self.arena[node].children[0], depth + 1);
+            self.print(self.arena[node].children[0], indent + 3);
 
             // Print the current node.
-            println!("{:width$}{}", "", self.arena[node].value, width = depth * 3);
+            println!("{:width$}{}", "", self.arena[node].value, width = indent);
 
             // Print the right subtree.
-            self.print(self.arena[node].children[1], depth + 1);
+            self.print(self.arena[node].children[1], indent + 3);
         }
     }
 }
@@ -159,7 +172,7 @@ fn main() {
 
     // Insert a bunch of pseudorandom numbers.
     let mut num = 1u32;
-    for _ in 0..30 {
+    for i in 0..30 {
         num = num.wrapping_mul(17).wrapping_add(255);
         splay.insert(num);
     }

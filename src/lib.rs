@@ -2,18 +2,13 @@
 //!
 //! `Arena<T>` is basically just a `Vec<Option<T>>`, which allows you to:
 //!
-//! * Insert an object (reuse an existing `None` element, or append to the end)
-//! * Remove object at a specified index
-//! * Access object at a specified index
-//!
-//! It's useful in situations where you need to create complex graphs. For example:
-//!
-//! * Doubly linked lists
-//! * Bidirectional trees
-//! * Widget hierarchies in GUIs
-//! * Graphs with circular references
+//! * Insert an object (reuse an existing `None` element, or append to the end).
+//! * Remove object at a specified index.
+//! * Access object at a specified index.
 //!
 //! # Examples
+//!
+//! Some data structures built using `Arena<T>`:
 //!
 //! * [Doubly linked list](https://github.com/stjepang/vec-arena/blob/master/examples/linked_list.rs)
 //! * [Splay tree](https://github.com/stjepang/vec-arena/blob/master/examples/splay_tree.rs)
@@ -24,9 +19,17 @@ use std::ops::{Index, IndexMut};
 use std::slice;
 use std::vec;
 
+/// A slot, which is either vacant or occupied.
+///
+/// Vacant slots in arena are linked together into a singly linked list. This allows the arena to
+/// efficiently find a vacant slot before inserting a new object, or reclaiming a slot after
+/// removing an object.
 #[derive(Clone)]
 enum Slot<T> {
+    /// Vacant slot, containing index to the next slot in the linked list.
     Vacant(usize),
+
+    /// Occupied slot, containing a value.
     Occupied(T),
 }
 
@@ -83,8 +86,13 @@ enum Slot<T> {
 ///
 /// To access slots without fear of panicking, use `get` and `get_mut`, which return `Option`s.
 pub struct Arena<T> {
+    /// Slots in which objects are stored.
     slots: Vec<Slot<T>>,
+
+    /// Number of occupied slots in the arena.
     len: usize,
+
+    /// Index of the first vacant slot in the linked list.
     head: usize,
 }
 

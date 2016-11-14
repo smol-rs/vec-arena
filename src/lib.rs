@@ -1,4 +1,4 @@
-//! A fast general-purpose object arena.
+//! A simple object arena.
 //!
 //! `Arena<T>` is basically just a `Vec<Option<T>>`, which allows you to:
 //!
@@ -12,9 +12,6 @@
 //! * Bidirectional trees
 //! * Widget hierarchies in GUIs
 //! * Graphs with circular references
-//!
-//! As a rule of thumb, if building a data structure using `Rc` and `RefCell` gets too messy or
-//! costly, `Arena` might be a better choice.
 //!
 //! # Examples
 //!

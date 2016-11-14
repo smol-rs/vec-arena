@@ -1,8 +1,9 @@
 [package]
 name = "vec-arena"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
-description = "Object arena resembling Vec<Option<T>>"
+description = "A simple object arena"
+repository = "https://github.com/stjepang/vec-arena"
 documentation = "https://docs.rs/vec-arena"
-license = "Apache-2.0/MIT"
 readme = "README.md"
+license = "Apache-2.0/MIT"

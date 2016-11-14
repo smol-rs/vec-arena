@@ -172,7 +172,7 @@ fn main() {
 
     // Insert a bunch of pseudorandom numbers.
     let mut num = 1u32;
-    for i in 0..30 {
+    for _ in 0..30 {
         num = num.wrapping_mul(17).wrapping_add(255);
         splay.insert(num);
     }

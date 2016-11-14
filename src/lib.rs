@@ -15,6 +15,11 @@
 //!
 //! As a rule of thumb, if building a data structure using `Rc` and `RefCell` gets too messy or
 //! costly, `Arena` might be a better choice.
+//!
+//! # Examples
+//!
+//! * [Doubly linked list](https://github.com/stjepang/vec-arena/blob/master/examples/linked_list.rs)
+//! * [Splay tree](https://github.com/stjepang/vec-arena/blob/master/examples/splay_tree.rs)
 
 use std::iter;
 use std::mem;

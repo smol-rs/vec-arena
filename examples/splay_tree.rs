@@ -43,7 +43,7 @@ impl<T> Splay<T> where T: Ord {
     /// Constructs a new, empty splay tree.
     fn new() -> Splay<T> {
         Splay {
-            arena: Arena::with_capacity(1000000),
+            arena: Arena::new(),
             root: NULL,
         }
     }

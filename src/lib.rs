@@ -13,6 +13,7 @@
 //! * [Doubly linked list](https://github.com/stjepang/vec-arena/blob/master/examples/linked_list.rs)
 //! * [Splay tree](https://github.com/stjepang/vec-arena/blob/master/examples/splay_tree.rs)
 
+use std::fmt;
 use std::iter;
 use std::mem;
 use std::ops::{Index, IndexMut};
@@ -497,6 +498,12 @@ impl<T> Arena<T> {
     }
 }
 
+impl<T> fmt::Debug for Arena<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Arena {{ ... }}")
+    }
+}
+
 impl<T> Index<usize> for Arena<T> {
     type Output = T;
 
@@ -558,6 +565,12 @@ impl<T> IntoIterator for Arena<T> {
     }
 }
 
+impl<T> fmt::Debug for IntoIter<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "IntoIter {{ ... }}")
+    }
+}
+
 /// An iterator over references to the occupied slots in a `Arena`.
 pub struct Iter<'a, T: 'a> {
     slots: iter::Enumerate<slice::Iter<'a, Slot<T>>>,
@@ -577,6 +590,12 @@ impl<'a, T> Iterator for Iter<'a, T> {
     }
 }
 
+impl<'a, T> fmt::Debug for Iter<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Iter {{ ... }}")
+    }
+}
+
 /// An iterator over mutable references to the occupied slots in a `Arena`.
 pub struct IterMut<'a, T: 'a> {
     slots: iter::Enumerate<slice::IterMut<'a, Slot<T>>>,
@@ -593,6 +612,12 @@ impl<'a, T> Iterator for IterMut<'a, T> {
             }
         }
         None
+    }
+}
+
+impl<'a, T> fmt::Debug for IterMut<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "IterMut {{ ... }}")
     }
 }
 

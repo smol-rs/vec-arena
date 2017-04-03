@@ -7,3 +7,6 @@ repository = "https://github.com/stjepang/vec-arena"
 documentation = "https://docs.rs/vec-arena"
 readme = "README.md"
 license = "Apache-2.0/MIT"
+
+[dependencies]
+unreachable = "0.1"

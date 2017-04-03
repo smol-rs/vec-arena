@@ -13,6 +13,8 @@
 //! * [Doubly linked list](https://github.com/stjepang/vec-arena/blob/master/examples/linked_list.rs)
 //! * [Splay tree](https://github.com/stjepang/vec-arena/blob/master/examples/splay_tree.rs)
 
+extern crate unreachable;
+
 use std::fmt;
 use std::iter;
 use std::mem;
@@ -20,6 +22,8 @@ use std::ops::{Index, IndexMut};
 use std::ptr;
 use std::slice;
 use std::vec;
+
+use unreachable::unreachable;
 
 /// A slot, which is either vacant or occupied.
 ///
@@ -351,9 +355,9 @@ impl<T> Arena<T> {
 
     /// Returns a reference to the object stored at `index`.
     ///
-    /// # Panics
+    /// # Safety
     ///
-    /// Panics if `index` is out of bounds or the slot is vacant.
+    /// Behavior is undefined if `index` is out of bounds or the slot is vacant.
     ///
     /// # Examples
     ///
@@ -368,17 +372,17 @@ impl<T> Arena<T> {
     #[inline]
     pub unsafe fn get_unchecked(&self, index: usize) -> &T {
         match self.slots.get(index) {
-            None => panic!("the index is out of bounds"),
-            Some(&Slot::Vacant(_)) => panic!("the slot is vacant"),
+            None => unreachable(),
+            Some(&Slot::Vacant(_)) => unreachable(),
             Some(&Slot::Occupied(ref object)) => object,
         }
     }
 
     /// Returns a mutable reference to the object stored at `index`.
     ///
-    /// # Panics
+    /// # Safety
     ///
-    /// Panics if `index` is out of bounds or the slot is vacant.
+    /// Behavior is undefined if `index` is out of bounds or the slot is vacant.
     ///
     /// # Examples
     ///
@@ -393,8 +397,8 @@ impl<T> Arena<T> {
     #[inline]
     pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
         match self.slots.get_mut(index) {
-            None => panic!("the index is out of bounds"),
-            Some(&mut Slot::Vacant(_)) => panic!("the slot is vacant"),
+            None => unreachable(),
+            Some(&mut Slot::Vacant(_)) => unreachable(),
             Some(&mut Slot::Occupied(ref mut object)) => object,
         }
     }

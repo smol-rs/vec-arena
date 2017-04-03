@@ -17,6 +17,7 @@ use std::fmt;
 use std::iter;
 use std::mem;
 use std::ops::{Index, IndexMut};
+use std::ptr;
 use std::slice;
 use std::vec;
 
@@ -395,6 +396,38 @@ impl<T> Arena<T> {
             None => panic!("the index is out of bounds"),
             Some(&mut Slot::Vacant(_)) => panic!("the slot is vacant"),
             Some(&mut Slot::Occupied(ref mut object)) => object,
+        }
+    }
+
+    /// Swaps two objects in the arena.
+    ///
+    /// The two indices are `a` and `b`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the indices is out of bounds or any of the slots is vacant.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// let a = arena.insert(7);
+    /// let b = arena.insert(8);
+    ///
+    /// arena.swap(a, b);
+    /// assert_eq!(arena.get(a), Some(&8));
+    /// assert_eq!(arena.get(b), Some(&7));
+    /// ```
+    #[inline]
+    pub fn swap(&mut self, a: usize, b: usize) {
+        unsafe {
+            let fst = self.get_mut(a).unwrap() as *mut _;
+            let snd = self.get_mut(b).unwrap() as *mut _;
+            if a != b {
+                ptr::swap(fst, snd);
+            }
         }
     }
 

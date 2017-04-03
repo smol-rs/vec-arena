@@ -297,7 +297,9 @@ impl<T> Arena<T> {
         self.head = !0;
     }
 
-    /// Returns a reference to the object stored at `index`, or `None` if it's out of bounds.
+    /// Returns a reference to the object stored at `index`.
+    ///
+    /// If `index` is out of bounds or the slot is vacant, `None` is returned.
     ///
     /// # Examples
     ///
@@ -320,8 +322,9 @@ impl<T> Arena<T> {
         }
     }
 
-    /// Returns a mutable reference to the object stored at `index`, or `None` if it's out of
-    /// bounds.
+    /// Returns a mutable reference to the object stored at `index`.
+    ///
+    /// If `index` is out of bounds or the slot is vacant, `None` is returned.
     ///
     /// # Examples
     ///
@@ -341,6 +344,56 @@ impl<T> Arena<T> {
             None => None,
             Some(&mut Slot::Vacant(_)) => None,
             Some(&mut Slot::Occupied(ref mut object)) => Some(object),
+        }
+    }
+
+    /// Returns a reference to the object stored at `index`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of bounds or the slot is vacant.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// let index = arena.insert("hello");
+    ///
+    /// unsafe { assert_eq!(&*arena.get_unchecked(index), &"hello") }
+    /// ```
+    #[inline]
+    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
+        match self.slots.get(index) {
+            None => panic!("the index is out of bounds"),
+            Some(&Slot::Vacant(_)) => panic!("the slot is vacant"),
+            Some(&Slot::Occupied(ref object)) => object,
+        }
+    }
+
+    /// Returns a mutable reference to the object stored at `index`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of bounds or the slot is vacant.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    /// let index = arena.insert("hello");
+    ///
+    /// unsafe { assert_eq!(&*arena.get_unchecked_mut(index), &"hello") }
+    /// ```
+    #[inline]
+    pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
+        match self.slots.get_mut(index) {
+            None => panic!("the index is out of bounds"),
+            Some(&mut Slot::Vacant(_)) => panic!("the slot is vacant"),
+            Some(&mut Slot::Occupied(ref mut object)) => object,
         }
     }
 

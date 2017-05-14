@@ -210,6 +210,32 @@ impl<T> Arena<T> {
         self.len == 0
     }
 
+    /// Returns the index of the slot that next `insert` will use if no other
+    /// mutating calls take place in between.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    ///
+    /// let a = arena.next_vacant();
+    /// let b = arena.insert(1);
+    /// assert_eq!(a, b);
+    /// let c = arena.next_vacant();
+    /// let d = arena.insert(2);
+    /// assert_eq!(c, d);
+    /// ```
+    #[inline]
+    pub fn next_vacant(&mut self) -> usize {
+        if self.head == !0 {
+            self.len
+        } else {
+            self.head
+        }
+    }
+
     /// Inserts an object into the arena and returns the slot index it was stored in.
     /// The arena will reallocate if it's full.
     ///

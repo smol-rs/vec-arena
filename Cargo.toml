@@ -1,6 +1,6 @@
 [package]
 name = "vec-arena"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 description = "A simple object arena"
 repository = "https://github.com/stjepang/vec-arena"

@@ -628,6 +628,17 @@ impl<T> IntoIterator for Arena<T> {
     }
 }
 
+impl<T> iter::FromIterator<T> for Arena<T> {
+    fn from_iter<U: IntoIterator<Item=T>>(iter: U) -> Arena<T> {
+        let iter = iter.into_iter();
+        let mut arena = Arena::with_capacity(iter.size_hint().0);
+        for i in iter {
+            arena.insert(i);
+        }
+        arena
+    }
+}
+
 impl<T> fmt::Debug for IntoIter<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "IntoIter {{ ... }}")
@@ -904,6 +915,18 @@ mod tests {
         assert_eq!(*it.next().unwrap().1, 10 + a);
         assert_eq!(*it.next().unwrap().1, 30 + c);
         assert_eq!(*it.next().unwrap().1, 40 + d);
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn from_iter() {
+        let arena: Arena<_> = [10, 20, 30, 40].iter().cloned().collect();
+
+        let mut it = arena.iter();
+        assert_eq!(it.next(), Some((0, &10)));
+        assert_eq!(it.next(), Some((1, &20)));
+        assert_eq!(it.next(), Some((2, &30)));
+        assert_eq!(it.next(), Some((3, &40)));
         assert_eq!(it.next(), None);
     }
 }

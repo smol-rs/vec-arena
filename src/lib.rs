@@ -664,6 +664,16 @@ impl<'a, T> Iterator for Iter<'a, T> {
     }
 }
 
+impl<'a, T> IntoIterator for &'a Arena<T> {
+    type Item = (usize, &'a T);
+    type IntoIter = Iter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl<'a, T> fmt::Debug for Iter<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Iter {{ ... }}")
@@ -686,6 +696,16 @@ impl<'a, T> Iterator for IterMut<'a, T> {
             }
         }
         None
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Arena<T> {
+    type Item = (usize, &'a mut T);
+    type IntoIter = IterMut<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
 
@@ -907,7 +927,7 @@ mod tests {
             assert_eq!(it.next(), None);
         }
 
-        for (index, value) in arena.iter_mut() {
+        for (index, value) in &mut arena {
             *value += index;
         }
 

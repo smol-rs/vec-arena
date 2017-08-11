@@ -559,6 +559,28 @@ impl<T> Arena<T> {
     pub fn iter_mut(&mut self) -> IterMut<T> {
         IterMut { slots: self.slots.iter_mut().enumerate() }
     }
+
+    /// Shrinks the capacity of the arena as much as possible.
+    ///
+    /// It will drop down as close as possible to the length but the allocator may still inform
+    /// the arena that there is space for a few more elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::with_capacity(10);
+    /// arena.insert("first".to_string());
+    /// arena.insert("second".to_string());
+    /// arena.insert("third".to_string());
+    /// assert_eq!(arena.capacity(), 10);
+    /// arena.shrink_to_fit();
+    /// assert!(arena.capacity() >= 3);
+    /// ```
+    pub fn shrink_to_fit(&mut self) {
+        self.slots.shrink_to_fit();
+    }
 }
 
 impl<T> fmt::Debug for Arena<T> {

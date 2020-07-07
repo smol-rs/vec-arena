@@ -1,5 +1,3 @@
-extern crate vec_arena;
-
 use vec_arena::Arena;
 
 /// The null index, akin to null pointers.
@@ -39,7 +37,7 @@ struct Splay<T> {
     root: usize,
 }
 
-impl<T> Splay<T> where T: Ord {
+impl<T: Ord> Splay<T> {
     /// Constructs a new, empty splay tree.
     fn new() -> Splay<T> {
         Splay {
@@ -139,7 +137,11 @@ impl<T> Splay<T> where T: Ord {
             let mut p = self.root;
             loop {
                 // Decide whether to go left or right.
-                let dir = if self.arena[n].value < self.arena[p].value { 0 } else { 1 };
+                let dir = if self.arena[n].value < self.arena[p].value {
+                    0
+                } else {
+                    1
+                };
                 let c = self.arena[p].children[dir];
 
                 if c == NULL {
@@ -153,7 +155,10 @@ impl<T> Splay<T> where T: Ord {
     }
 
     /// Pretty-prints the subtree rooted at `node`, indented by `indent` spaces.
-    fn print(&self, node: usize, indent: usize) where T: std::fmt::Display {
+    fn print(&self, node: usize, indent: usize)
+    where
+        T: std::fmt::Display,
+    {
         if node != NULL {
             // Print the left subtree.
             self.print(self.arena[node].children[0], indent + 3);

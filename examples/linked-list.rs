@@ -1,5 +1,3 @@
-extern crate vec_arena;
-
 use vec_arena::Arena;
 
 /// The null index, akin to null pointers.
@@ -49,8 +47,12 @@ impl<T> List<T> {
 
     /// Links nodes `a` and `b` together, so that `a` comes before `b` in the list.
     fn link(&mut self, a: usize, b: usize) {
-        if a != NULL { self.arena[a].next = b; }
-        if b != NULL { self.arena[b].prev = a; }
+        if a != NULL {
+            self.arena[a].next = b;
+        }
+        if b != NULL {
+            self.arena[b].prev = a;
+        }
     }
 
     /// Appends `value` to the back of the list.
@@ -88,8 +90,12 @@ impl<T> List<T> {
         let node = self.arena.remove(index).unwrap();
 
         self.link(node.prev, node.next);
-        if self.head == index { self.head = node.next; }
-        if self.tail == index { self.tail = node.prev; }
+        if self.head == index {
+            self.head = node.next;
+        }
+        if self.tail == index {
+            self.tail = node.prev;
+        }
 
         node.value
     }

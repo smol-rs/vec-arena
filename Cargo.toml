@@ -1,16 +1,11 @@
 [package]
 name = "vec-arena"
-version = "0.4.2"
+version = "0.5.0"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
+edition = "2018"
 description = "A simple object arena"
 repository = "https://github.com/stjepang/vec-arena"
 documentation = "https://docs.rs/vec-arena"
 readme = "README.md"
-license = "Apache-2.0/MIT"
+license = "Apache-2.0 OR MIT"
 categories = ["memory-management"]
-
-[badges]
-travis-ci = { repository = "stjepang/vec-arena" }
-
-[dependencies]
-unreachable = "0.1"

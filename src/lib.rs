@@ -315,6 +315,40 @@ impl<T> Arena<T> {
         }
     }
 
+    /// Retains objects for which the closure return `true`.
+    ///
+    /// All other objects will be removed from the arena.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_arena::Arena;
+    ///
+    /// let mut arena = Arena::new();
+    ///
+    /// let a = arena.insert(0);
+    /// let b = arena.insert(1);
+    /// let c = arena.insert(2);
+    ///
+    /// arena.retain(|k, v| k == a || *v == 1);
+    ///
+    /// assert!(arena.get(a).is_some());
+    /// assert!(arena.get(b).is_some());
+    /// assert!(arena.get(c).is_none());
+    /// ```
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(usize, &mut T) -> bool,
+    {
+        for i in 0..self.slots.len() {
+            if let Slot::Occupied(v) = &mut self.slots[i] {
+                if !f(i, v) {
+                    self.remove(i);
+                }
+            }
+        }
+    }
+
     /// Clears the arena, removing and dropping all objects it holds.
     ///
     /// Keeps the allocated memory for reuse.

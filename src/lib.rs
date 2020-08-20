@@ -315,7 +315,7 @@ impl<T> Arena<T> {
         }
     }
 
-    /// Retains objects for which the closure return `true`.
+    /// Retains objects for which the closure returns `true`.
     ///
     /// All other objects will be removed from the arena.
     ///

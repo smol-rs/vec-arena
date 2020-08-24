@@ -25,5 +25,5 @@ It will provide a more convenient API than a plain `Vec<T>`.
 
 Some data structures built using `Arena<T>`:
 
-* [Doubly linked list](https://github.com/stjepang/vec-arena/blob/master/examples/linked_list.rs)
-* [Splay tree](https://github.com/stjepang/vec-arena/blob/master/examples/splay_tree.rs)
+* [Doubly linked list](https://github.com/stjepang/vec-arena/blob/master/examples/linked-list.rs)
+* [Splay tree](https://github.com/stjepang/vec-arena/blob/master/examples/splay-tree.rs)

@@ -10,8 +10,8 @@
 //!
 //! Some data structures built using `Arena<T>`:
 //!
-//! * [Doubly linked list](https://github.com/stjepang/vec-arena/blob/master/examples/linked_list.rs)
-//! * [Splay tree](https://github.com/stjepang/vec-arena/blob/master/examples/splay_tree.rs)
+//! * [Doubly linked list](https://github.com/smol-rs/vec-arena/blob/master/examples/linked_list.rs)
+//! * [Splay tree](https://github.com/smol-rs/vec-arena/blob/master/examples/splay_tree.rs)
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]

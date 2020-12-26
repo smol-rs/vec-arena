@@ -1,7 +1,7 @@
 # vec-arena
 
-[![Build Status](https://travis-ci.org/stjepang/vec-arena.svg?branch=master)](https://travis-ci.org/stjepang/vec-arena)
-[![License](https://img.shields.io/badge/license-Apache--2.0%2FMIT-blue.svg)](https://github.com/stjepang/vec-arena)
+[![Build Status](https://travis-ci.org/smol-rs/vec-arena.svg?branch=master)](https://travis-ci.org/smol-rs/vec-arena)
+[![License](https://img.shields.io/badge/license-Apache--2.0%2FMIT-blue.svg)](https://github.com/smol-rs/vec-arena)
 [![Cargo](https://img.shields.io/crates/v/vec-arena.svg)](https://crates.io/crates/vec-arena)
 [![Documentation](https://docs.rs/vec-arena/badge.svg)](https://docs.rs/vec-arena)
 
@@ -25,5 +25,5 @@ It will provide a more convenient API than a plain `Vec<T>`.
 
 Some data structures built using `Arena<T>`:
 
-* [Doubly linked list](https://github.com/stjepang/vec-arena/blob/master/examples/linked-list.rs)
-* [Splay tree](https://github.com/stjepang/vec-arena/blob/master/examples/splay-tree.rs)
+* [Doubly linked list](https://github.com/smol-rs/vec-arena/blob/master/examples/linked-list.rs)
+* [Splay tree](https://github.com/smol-rs/vec-arena/blob/master/examples/splay-tree.rs)

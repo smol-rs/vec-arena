@@ -6,6 +6,5 @@ edition = "2018"
 description = "A simple object arena"
 repository = "https://github.com/smol-rs/vec-arena"
 documentation = "https://docs.rs/vec-arena"
-readme = "README.md"
 license = "Apache-2.0 OR MIT"
 categories = ["memory-management"]

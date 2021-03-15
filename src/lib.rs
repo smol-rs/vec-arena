@@ -13,15 +13,19 @@
 //! * [Doubly linked list](https://github.com/smol-rs/vec-arena/blob/master/examples/linked_list.rs)
 //! * [Splay tree](https://github.com/smol-rs/vec-arena/blob/master/examples/splay_tree.rs)
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
-use std::fmt;
-use std::iter;
-use std::mem;
-use std::ops::{Index, IndexMut};
-use std::slice;
-use std::vec;
+extern crate alloc;
+
+use alloc::fmt;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::iter;
+use core::mem;
+use core::ops::{Index, IndexMut};
+use core::slice;
 
 /// A slot, which is either vacant or occupied.
 ///

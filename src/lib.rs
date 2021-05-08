@@ -16,6 +16,10 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
+#![deprecated(
+    since = "1.2.0",
+    note = "This crate is now deprecated in favor of [slab](https://crates.io/crates/slab)."
+)]
 
 extern crate alloc;
 

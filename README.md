@@ -1,10 +1,12 @@
-# vec-arena
+# vec-arena (deprecated)
 
 [![Build](https://github.com/smol-rs/vec-arena/workflows/Build%20and%20test/badge.svg)](
 https://github.com/smol-rs/vec-arena/actions)
 [![License](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg)](https://github.com/smol-rs/vec-arena)
 [![Cargo](https://img.shields.io/crates/v/vec-arena.svg)](https://crates.io/crates/vec-arena)
 [![Documentation](https://docs.rs/vec-arena/badge.svg)](https://docs.rs/vec-arena)
+
+**This crate is now deprecated in favor of [slab](https://crates.io/crates/slab).**
 
 #### What is this?
 
